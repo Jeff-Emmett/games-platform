@@ -51,7 +51,7 @@ if [ -d ".git" ]; then
     git pull origin main
 else
     echo "Cloning repository..."
-    git clone https://gitea.jeffemmett.com/jeff/games-platform.git .
+    git clone https://gitea.jeffemmett.com/jeffemmett/games-platform.git .
 fi
 
 # Create environment file if it doesn't exist
