@@ -1,0 +1,122 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: games-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: games_platform
+      POSTGRES_USER: games_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - games-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U games_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for job queues
+  redis:
+    image: redis:7-alpine
+    container_name: games-redis
+    restart: unless-stopped
+    networks:
+      - games-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: games-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://games_user:${DB_PASSWORD:-changeme123}@postgres:5432/games_platform
+      REDIS_URL: redis://redis:6379
+      GAMES_STORAGE_PATH: /data/games
+      UPLOAD_MAX_SIZE: 5368709120  # 5GB
+    volumes:
+      - games_data:/data/games
+      - ./backend:/app
+    networks:
+      - games-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8001:8000"
+
+  # Game Installation Worker
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: games-worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://games_user:${DB_PASSWORD:-changeme123}@postgres:5432/games_platform
+      REDIS_URL: redis://redis:6379
+      GAMES_STORAGE_PATH: /data/games
+    volumes:
+      - games_data:/data/games
+      - ./worker:/app
+    networks:
+      - games-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: https://games.jeffemmett.com/api
+    container_name: games-frontend
+    restart: unless-stopped
+    networks:
+      - games-network
+    ports:
+      - "3000:80"
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: games-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - games_data:/data/games:ro
+    networks:
+      - games-network
+    depends_on:
+      - backend
+      - frontend
+
+networks:
+  games-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  games_data:

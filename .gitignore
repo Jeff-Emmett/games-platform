@@ -1,0 +1,53 @@
+# Environment
+.env
+*.env
+!.env.example
+
+# Data
+/data/
+/games/
+postgres_data/
+games_data/
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# ROMs and ISOs (DO NOT COMMIT)
+*.iso
+*.bin
+*.cue
+*.z64
+*.n64
+*.gba
+*.smc
+*.sfc
+*.rom
+
+# SSL certificates
+*.pem
+*.key
+*.crt
