@@ -45,7 +45,7 @@ services:
       DATABASE_URL: postgresql://games_user:${DB_PASSWORD:-changeme123}@postgres:5432/games_platform
       REDIS_URL: redis://redis:6379
       GAMES_STORAGE_PATH: /data/games
-      UPLOAD_MAX_SIZE: 5368709120  # 5GB
+      UPLOAD_MAX_SIZE: 5368709120
     volumes:
       - games_data:/data/games
       - ./backend:/app
@@ -56,8 +56,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - "8001:8000"
 
   # Game Installation Worker
   worker:
@@ -92,30 +90,33 @@ services:
     restart: unless-stopped
     networks:
       - games-network
-    ports:
-      - "3000:80"
 
   # Nginx Reverse Proxy
   nginx:
     image: nginx:alpine
     container_name: games-nginx
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
       - games_data:/data/games:ro
     networks:
       - games-network
+      - traefik-public
     depends_on:
       - backend
       - frontend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.games.rule=Host(`games.jeffemmett.com`)"
+      - "traefik.http.routers.games.entrypoints=web"
+      - "traefik.http.services.games.loadbalancer.server.port=80"
+      - "traefik.docker.network=traefik-public"
 
 networks:
   games-network:
     driver: bridge
+  traefik-public:
+    external: true
 
 volumes:
   postgres_data:
