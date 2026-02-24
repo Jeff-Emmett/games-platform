@@ -9,7 +9,7 @@ services:
     environment:
       POSTGRES_DB: games_platform
       POSTGRES_USER: games_user
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme123}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -42,10 +42,11 @@ services:
     container_name: games-backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://games_user:${DB_PASSWORD:-changeme123}@postgres:5432/games_platform
-      REDIS_URL: redis://redis:6379
       GAMES_STORAGE_PATH: /data/games
       UPLOAD_MAX_SIZE: 5368709120
+      INFISICAL_CLIENT_ID: ${INFISICAL_CLIENT_ID}
+      INFISICAL_CLIENT_SECRET: ${INFISICAL_CLIENT_SECRET}
+      INFISICAL_PROJECT_SLUG: games-platform
     volumes:
       - games_data:/data/games
       - ./backend:/app
@@ -65,9 +66,10 @@ services:
     container_name: games-worker
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://games_user:${DB_PASSWORD:-changeme123}@postgres:5432/games_platform
-      REDIS_URL: redis://redis:6379
       GAMES_STORAGE_PATH: /data/games
+      INFISICAL_CLIENT_ID: ${INFISICAL_CLIENT_ID}
+      INFISICAL_CLIENT_SECRET: ${INFISICAL_CLIENT_SECRET}
+      INFISICAL_PROJECT_SLUG: games-platform
     volumes:
       - games_data:/data/games
       - ./worker:/app
