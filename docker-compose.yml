@@ -52,6 +52,7 @@ services:
       - ./backend:/app
     networks:
       - games-network
+      - traefik-public
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,6 +76,7 @@ services:
       - ./worker:/app
     networks:
       - games-network
+      - traefik-public
     depends_on:
       postgres:
         condition: service_healthy
