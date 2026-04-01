@@ -1,0 +1,80 @@
+# Gitea Actions CI/CD — Multi-image (backend + frontend + worker)
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: localhost:3000
+  IMAGE_BASE: localhost:3000/jeffemmett/games-platform
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    container:
+      image: docker:cli
+    steps:
+      - name: Setup tools
+        run: apk add --no-cache git openssh-client curl
+
+      - name: Checkout
+        run: git clone --depth 1 --branch ${{ github.ref_name }} http://token:${{ github.token }}@server:3000/${{ github.repository }}.git .
+
+      - name: Set image tag
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
+          echo "IMAGE_TAG=${SHORT_SHA}" >> $GITHUB_ENV
+
+      - name: Build and push images
+        run: |
+          echo "${{ secrets.REGISTRY_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ secrets.REGISTRY_USER }} --password-stdin
+
+          # Backend
+          docker build -t ${{ env.IMAGE_BASE }}-backend:${{ env.IMAGE_TAG }} -t ${{ env.IMAGE_BASE }}-backend:latest -f backend/Dockerfile backend/
+          docker push ${{ env.IMAGE_BASE }}-backend:${{ env.IMAGE_TAG }}
+          docker push ${{ env.IMAGE_BASE }}-backend:latest
+
+          # Frontend
+          docker build -t ${{ env.IMAGE_BASE }}-frontend:${{ env.IMAGE_TAG }} -t ${{ env.IMAGE_BASE }}-frontend:latest --build-arg VITE_API_URL=https://games.jeffemmett.com/api -f frontend/Dockerfile frontend/
+          docker push ${{ env.IMAGE_BASE }}-frontend:${{ env.IMAGE_TAG }}
+          docker push ${{ env.IMAGE_BASE }}-frontend:latest
+
+          # Worker
+          docker build -t ${{ env.IMAGE_BASE }}-worker:${{ env.IMAGE_TAG }} -t ${{ env.IMAGE_BASE }}-worker:latest -f worker/Dockerfile worker/
+          docker push ${{ env.IMAGE_BASE }}-worker:${{ env.IMAGE_TAG }}
+          docker push ${{ env.IMAGE_BASE }}-worker:latest
+
+      - name: Deploy
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} "
+            cd /opt/apps/games-platform
+            cat .last-deployed-tag 2>/dev/null > .rollback-tag || true
+            echo '${{ env.IMAGE_TAG }}' > .last-deployed-tag
+            docker pull ${{ env.IMAGE_BASE }}-backend:${{ env.IMAGE_TAG }}
+            docker pull ${{ env.IMAGE_BASE }}-frontend:${{ env.IMAGE_TAG }}
+            docker pull ${{ env.IMAGE_BASE }}-worker:${{ env.IMAGE_TAG }}
+            IMAGE_TAG=${{ env.IMAGE_TAG }} docker compose up -d --no-build backend frontend worker
+          "
+
+      - name: Smoke test
+        run: |
+          sleep 15
+          STATUS=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} \
+            "cd /opt/apps/games-platform && docker compose ps --format '{{.Status}}' backend 2>/dev/null | head -1 || echo 'unknown'")
+          if echo "$STATUS" | grep -qi "up"; then
+            echo "Smoke test passed (backend status: $STATUS)"
+          else
+            echo "Smoke test failed (backend status: $STATUS) — rolling back"
+            ROLLBACK_TAG=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} "cat /opt/apps/games-platform/.rollback-tag 2>/dev/null")
+            if [ -n "$ROLLBACK_TAG" ]; then
+              ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} \
+                "cd /opt/apps/games-platform && IMAGE_TAG=$ROLLBACK_TAG docker compose up -d --no-build backend frontend worker"
+              echo "Rolled back to $ROLLBACK_TAG"
+            fi
+            exit 1
+          fi
